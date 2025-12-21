@@ -55,11 +55,15 @@ jobs:
           fi
           echo "APP_URL is configured"
 
+      - name: Build payload
+        run: |
+          echo "{\"changes\":[${{ steps.files.outputs.changes }}]}" > payload.json
+
       - name: Send sync payload to backend
         if: steps.files.outputs.changes != ''
         run: |
-            curl --fail --show-error --silent \
-              -X POST "${{ secrets.APP_URL }}/api/github/sync" \
-              -H "Content-Type: application/json" \
-              -H "x-api-key: ${{ secrets.SYNC_API_KEY }}" \
-              -d "{\"changes\":[${{ steps.files.outputs.changes }}]}"
+          curl --fail --show-error --silent \
+            -X POST "${{ secrets.APP_URL }}/api/github/sync" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: ${{ secrets.SYNC_API_KEY }}" \
+            --data-binary @payload.json
