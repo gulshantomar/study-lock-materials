@@ -13,27 +13,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Fetch all history for git diff to work reliably
+          fetch-depth: 0
 
       - name: Collect changed PDF files
         id: files
         run: |
           echo "changes<<EOF" >> $GITHUB_OUTPUT
-          # Handle empty 'before' on first push or force push edge cases if needed, 
-          # but fetch-depth: 0 helps. 
-          # If this is the very first commit, git diff might be empty or behave differently.
-          # Assuming standard push updates.
-          
-          # Using git diff --name-status to identify Added (A), Modified (M), Deleted (D)
-          # Format: STATUS PATH
-          # Output needs to be valid JSON objects.
-          
-          # Note: $1 is status, $2 is path. 
-          # Status mapping: A->added, M->modified, D->removed (to match backend expectation)
-          
+          # Use tab delimiter (-F'\t') to properly handle filenames with spaces
           git diff --name-status ${{ github.event.before }} ${{ github.sha }} \
             | grep '\.pdf$' \
-            | awk '{ 
+            | awk -F'\t' '{ 
                 status = "modified"; 
                 if ($1 == "A") status = "added"; 
                 if ($1 == "D") status = "removed"; 
@@ -53,7 +42,6 @@ jobs:
             echo "APP_URL secret is missing or empty"
             exit 1
           fi
-          echo "APP_URL is configured"
 
       - name: Build payload
         run: |
