@@ -1,0 +1,56 @@
+name: Sync Library to Database
+
+on:
+  push:
+    paths:
+      - "pdfs/**/*.pdf"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for git diff to work reliably
+
+      - name: Collect changed PDF files
+        id: files
+        run: |
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
+          # Handle empty 'before' on first push or force push edge cases if needed, 
+          # but fetch-depth: 0 helps. 
+          # If this is the very first commit, git diff might be empty or behave differently.
+          # Assuming standard push updates.
+          
+          # Using git diff --name-status to identify Added (A), Modified (M), Deleted (D)
+          # Format: STATUS PATH
+          # Output needs to be valid JSON objects.
+          
+          # Note: $1 is status, $2 is path. 
+          # Status mapping: A->added, M->modified, D->removed (to match backend expectation)
+          
+          git diff --name-status ${{ github.event.before }} ${{ github.sha }} \
+            | grep '\.pdf$' \
+            | awk '{ 
+                status = "modified"; 
+                if ($1 == "A") status = "added"; 
+                if ($1 == "D") status = "removed"; 
+                print "{\"status\":\"" status "\",\"path\":\"" $2 "\"}" 
+              }' \
+            | paste -sd "," - \
+            >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Skip if no PDF changes
+        if: steps.files.outputs.changes == ''
+        run: echo "No PDF changes detected"
+
+      - name: Send sync payload to backend
+        if: steps.files.outputs.changes != ''
+        run: |
+          curl -X POST "${{ secrets.APP_URL }}/api/github/sync" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: ${{ secrets.SYNC_API_KEY }}" \
+            -d "{\"changes\":[${{ steps.files.outputs.changes }}]}"
