@@ -40,11 +40,16 @@ jobs:
           echo "{\"changes\":[${{ steps.files.outputs.changes }}]}" > payload.json
           echo "Payload preview:"
           cat payload.json
-      - name: Send sync payload to backend
-        if: steps.files.outputs.changes != ''
+      - name: Send payload to backend (hard-safe)
         run: |
-          curl --show-error --silent \
+          set -euo pipefail
+      
+          echo "=== Sending this payload ==="
+          cat payload.json
+          echo "============================"
+      
+          curl --fail --show-error --verbose \
             -X POST "${{ secrets.APP_URL }}/api/github/sync" \
             -H "Content-Type: application/json" \
             -H "x-api-key: ${{ secrets.SYNC_API_KEY }}" \
-            --data-binary @payload.json
+            --data-binary "$(cat payload.json)"
