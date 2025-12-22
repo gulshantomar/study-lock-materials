@@ -10,16 +10,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout full history (required for diff)
+      # 1. Checkout full history (required for git diff)
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. Build payload.json safely
+      # 2. Detect changed PDFs and build payload.json
       - name: Build payload.json
         run: |
           set -euo pipefail
+
+          echo "Detecting changed PDFs..."
 
           git diff --name-status ${{ github.event.before }} ${{ github.sha }} \
             | grep '\.pdf$' || true \
@@ -36,26 +38,26 @@ jobs:
                 }]
               ' > changes.json
 
-          # If no PDF changes, exit cleanly
+          # Exit cleanly if no PDF changes
           if [ ! -s changes.json ] || [ "$(jq length changes.json)" -eq 0 ]; then
-            echo "No PDF changes detected. Skipping sync."
+            echo "No PDF changes detected. Exiting workflow."
             exit 0
           fi
 
-          # Build final payload
-          jq -n '{ changes: input }' changes.json > payload.json
+          # ✅ Correct way to wrap JSON (NO empty body)
+          jq '{ changes: . }' changes.json > payload.json
 
-          echo "==== Payload to be sent ===="
+          echo "===== payload.json ====="
           cat payload.json
-          echo "============================"
+          echo "========================"
 
-      # 3. Verify required secrets
+      # 3. Verify secrets exist
       - name: Verify secrets
         run: |
           test -n "${{ secrets.APP_URL }}"
           test -n "${{ secrets.SYNC_API_KEY }}"
 
-      # 4. Send payload ONLY if payload.json exists
+      # 4. Send payload safely (no @file, no empty body)
       - name: Send sync payload to backend
         run: |
           if [ ! -f payload.json ]; then
