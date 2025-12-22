@@ -1,25 +1,20 @@
 name: Sync Library to Database
-
 on:
   push:
     paths:
       - "pdfs/**/*.pdf"
-
 jobs:
   sync:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Collect changed PDF files
         id: files
         run: |
           echo "changes<<EOF" >> $GITHUB_OUTPUT
-          # Use tab delimiter (-F'\t') to properly handle filenames with spaces
           git diff --name-status ${{ github.event.before }} ${{ github.sha }} \
             | grep '\.pdf$' \
             | awk -F'\t' '{ 
@@ -31,22 +26,20 @@ jobs:
             | paste -sd "," - \
             >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-
       - name: Skip if no PDF changes
         if: steps.files.outputs.changes == ''
         run: echo "No PDF changes detected"
-
       - name: Verify APP_URL is set
         run: |
           if [ -z "${{ secrets.APP_URL }}" ]; then
             echo "APP_URL secret is missing or empty"
             exit 1
           fi
-
       - name: Build payload
         run: |
           echo "{\"changes\":[${{ steps.files.outputs.changes }}]}" > payload.json
-
+          echo "Payload preview:"
+          cat payload.json
       - name: Send sync payload to backend
         if: steps.files.outputs.changes != ''
         run: |
