@@ -24,7 +24,7 @@ jobs:
           echo "Detecting changed PDFs..."
 
           git diff --name-status ${{ github.event.before }} ${{ github.sha }} \
-            | grep '\.pdf$' || true \
+            | (grep '\.pdf$' || true) \
             | jq -Rn '
                 [inputs | split("\t") | {
                   status: (
