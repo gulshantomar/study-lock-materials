@@ -1,83 +1,49 @@
 name: Sync Library to Database
-
 on:
   push:
     paths:
       - "pdfs/**/*.pdf"
-
 jobs:
   sync:
     runs-on: ubuntu-latest
-
     steps:
-      # 1. Checkout full git history (required for diff)
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # 2. Collect changed PDF files safely
       - name: Collect changed PDF files
         id: files
         run: |
-          set -euo pipefail
-
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
           git diff --name-status ${{ github.event.before }} ${{ github.sha }} \
-            | grep '\.pdf$' || true \
-            | jq -Rn '
-                [inputs | split("\t") | {
-                  status: (
-                    .[0]
-                    | if . == "A" then "added"
-                      elif . == "D" then "removed"
-                      else "modified"
-                      end
-                  ),
-                  path: .[1]
-                }]
-              ' > changes.json
-
-          if [ ! -s changes.json ] || [ "$(jq length changes.json)" -eq 0 ]; then
-            echo "changes=" >> "$GITHUB_OUTPUT"
-          else
-            echo "changes=$(jq -c . changes.json)" >> "$GITHUB_OUTPUT"
-          fi
-
-      # 3. Stop early if nothing changed
+            | grep '\.pdf$' \
+            | awk -F'\t' '{ 
+                status = "modified"; 
+                if ($1 == "A") status = "added"; 
+                if ($1 == "D") status = "removed"; 
+                printf "{\042status\042:\042%s\042,\042path\042:\042%s\042}", status, $2 
+              }' \
+            | paste -sd "," - \
+            >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
       - name: Skip if no PDF changes
         if: steps.files.outputs.changes == ''
-        run: echo "No PDF changes detected. Skipping sync."
-
-      # 4. Ensure required secrets exist
-      - name: Verify required secrets
-        if: steps.files.outputs.changes != ''
+        run: echo "No PDF changes detected"
+      - name: Verify APP_URL is set
         run: |
           if [ -z "${{ secrets.APP_URL }}" ]; then
-            echo "APP_URL secret is missing"
+            echo "APP_URL secret is missing or empty"
             exit 1
           fi
-
-          if [ -z "${{ secrets.SYNC_API_KEY }}" ]; then
-            echo "SYNC_API_KEY secret is missing"
-            exit 1
-          fi
-
-      # 5. Build final JSON payload
       - name: Build payload
-        if: steps.files.outputs.changes != ''
         run: |
-          jq -n \
-            --argjson changes '${{ steps.files.outputs.changes }}' \
-            '{ changes: $changes }' > payload.json
-
+          echo "{\"changes\":[${{ steps.files.outputs.changes }}]}" > payload.json
           echo "Payload preview:"
           cat payload.json
-
-      # 6. Send payload to backend
       - name: Send sync payload to backend
         if: steps.files.outputs.changes != ''
         run: |
-          curl --fail --show-error --silent \
+          curl --show-error --silent \
             -X POST "${{ secrets.APP_URL }}/api/github/sync" \
             -H "Content-Type: application/json" \
             -H "x-api-key: ${{ secrets.SYNC_API_KEY }}" \
